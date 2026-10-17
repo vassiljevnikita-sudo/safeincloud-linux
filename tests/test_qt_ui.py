@@ -17,7 +17,7 @@ class QtDesktopTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory(dir='/data-ssd/codex-artifacts/safeincloud-linux/work')
+        self.directory = tempfile.TemporaryDirectory()
         self.path = Path(self.directory.name) / 'test.db'
         self.path.write_bytes(encrypt(b'<database><label id="9" name="Privat"/><card id="1" title="Mail" star="true"><field name="Login" type="login">demo@example.test</field><field name="Passwort" type="password">sample-only</field><field name="Webseite" type="website">https://example.test</field><label_id>9</label_id></card></database>', 'test'))
         self.window = Window(self.path, settings=False)
