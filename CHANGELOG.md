@@ -6,7 +6,7 @@
 - Recover unsaved changes using a newly entered master password, without
   retaining a live Vault or password. If recovery encryption itself fails,
   release the session and warn that pending changes were discarded.
-- Disable Linux core dumps and ordinary same-user process-memory inspection.
+- Disable process core dumps while preserving GNOME portal integration.
 - Remove credential-capturing clipboard timers and clear aliased XML elements.
 
 # 0.5.1

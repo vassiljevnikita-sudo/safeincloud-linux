@@ -65,7 +65,9 @@ class SessionProcessTests(unittest.TestCase):
                     if index == 1:
                         result = json.loads(output)
                         self.assertTrue(result['restored'], errors.decode())
-                        self.assertEqual(result['dumpable'], 0)
+                        # Portals need ordinary /proc metadata access. Lock
+                        # protection comes from destroying the whole process.
+                        self.assertEqual(result['dumpable'], 1)
                         self.assertEqual(result['core_limit'], 0)
 
     def test_source_handover_keeps_only_nonsecret_metadata(self):

@@ -28,14 +28,14 @@ def receive_state(connection):
 
 
 def protect_process():
-    """Refuse core dumps and same-user ptrace/proc-memory access on Linux."""
-    import ctypes
+    """Disable core dumps without denying desktop portals /proc access.
+
+    PR_SET_DUMPABLE=0 also blocks GNOME from resolving /proc/<pid>/root,
+    breaking portal registration, file selection and system appearance.
+    Lock confidentiality relies on process termination, not that flag.
+    """
     import resource
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    if sys.platform == 'linux':
-        libc = ctypes.CDLL(None, use_errno=True)
-        if libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE
-            raise OSError(ctypes.get_errno(), 'Cannot protect vault process')
 
 
 def source_state(session):

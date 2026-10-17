@@ -123,8 +123,9 @@ manual resolution; this version does not merge two edited vaults automatically.
 Keep your existing independent backups. The legacy CBC file format is not
 cryptographically authenticated. Python cannot guarantee secure memory erasure;
 the desktop therefore terminates the secret-bearing process on lock rather than
-relying on deleting Python/Qt objects. Linux core dumps and ordinary same-user
-process-memory access are disabled before the session opens. This does not
+relying on deleting Python/Qt objects. Process core dumps are disabled before
+the session opens; standard process metadata remains accessible to desktop
+portals. This does not
 protect against root, a compromised client, prior captures, swap or clipboard
 history maintained by another application. A Drive request interrupted by lock
 can require a fresh check or conflict resolution; it never silently merges data.
