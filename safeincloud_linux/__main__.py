@@ -8,13 +8,13 @@ from . import DatabaseError, cards, load
 
 def main():
     parser = argparse.ArgumentParser(description="Read-only SafeInCloud viewer (experimental)")
-    parser.add_argument("database", help="Local COPY of an encrypted SafeInCloud .db file")
+    parser.add_argument("database", nargs="?", help="Local COPY of an encrypted SafeInCloud .db file")
     parser.add_argument("--gui", action="store_true", help="Open a local desktop viewer")
     parser.add_argument("--show", metavar="ID", help="Explicitly reveal fields of one card")
     args = parser.parse_args()
-    if args.gui:
-        from .gui import run
-        return run(args.database)
+    if args.gui or args.database is None:
+        from .startup import launch
+        return launch(args.database)
     try:
         root = load(args.database, getpass.getpass("Master password: "))
         entries = cards(root)
