@@ -7,12 +7,28 @@ simpler set of actions. No affiliation with SafeInCloud SAS.
 
 ![Desktop preview with fictional demo entries](docs/images/ui-preview.png)
 
+The selected interface combines the light Adwaita layout (design 1) with the
+Register typography (design 2): Atkinson Hyperlegible Next for controls, Spectral
+for titles, and Red Hat Mono for masked/revealed values. These open-source fonts
+are bundled locally, including their SIL Open Font License notices, so the native
+app does not need to fetch fonts from the network. The three panes keep labels,
+searchable entries and grouped details visible together. Search, add, edit and
+lock are also available with Ctrl+F, Ctrl+N, Ctrl+E and Ctrl+L.
+
+Light and dark appearance automatically follow the desktop's system preference.
+On Linux the app listens to the XDG Settings portal as well as Qt's appearance
+notifications, so an open window and editor update without losing pending edits.
+No separate theme setting or periodic polling is required.
+
 ## What works
 
 - Native Qt desktop with categories, existing labels and favorites.
+- Mark/unmark favorites directly in the entry details; changes are encrypted and saved.
 - Automatic discovery of the main database in Safe's **private Google app folder**.
 - Offline access through an encrypted local working copy.
 - Passwords masked by default; reveal/hide and copy with clipboard clearing.
+- Click the username or password dots directly to copy the underlying value;
+  copying keeps hidden passwords masked and clears the clipboard after 30 seconds.
 - Simple add/edit form, local autosave and encrypted recovery backups.
 - Drive check on unlock and after accepted edits; manual check when needed.
 - Conditional cloud updates: concurrent changes are refused rather than silently

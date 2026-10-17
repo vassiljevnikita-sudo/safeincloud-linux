@@ -6,7 +6,9 @@ from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QFileDialog
 from .official_drive import OfficialDrive
-from .qt_ui import STYLE, button, label, run
+from .qt_ui import button, label, run
+from .qt_system_theme import system_theme
+from .qt_theme import load_fonts
 
 
 class Delivery(QObject):
@@ -21,13 +23,14 @@ class SourceWindow(QDialog):
         self.source = None
         self.candidates = []
         self.callback = None
+        load_fonts()
         self.setWindowTitle('SafeInCloud Linux')
         self.setMinimumSize(640, 440)
-        self.setStyleSheet(STYLE)
+        system_theme()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 28, 32, 24)
         layout.setSpacing(14)
-        layout.addWidget(label('SAFE  /  LINUX', 'muted'))
+        layout.addWidget(label('SafeInCloud Linux', 'brand'))
         layout.addWidget(label('Deine Passwörter.\nAuf deinen Geräten.', 'heading'))
         self.status = label('Verbinde Google Drive. Deine Safe-Datenbank wird danach automatisch geöffnet.', 'status')
         self.status.setWordWrap(True)
@@ -140,6 +143,7 @@ def choose_source(directory, on_source=None):
 
 def launch(path=None):
     app = QApplication.instance() or QApplication([])
+    load_fonts()
     app.setApplicationName('SafeInCloud Linux')
     app.setDesktopFileName('safeincloud-linux')
     app.setWindowIcon(QIcon(str(Path(__file__).parent / 'assets/icon.svg')))

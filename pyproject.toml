@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "safeincloud-linux"
-version = "0.3.0"
+version = "0.5.0"
 description = "Experimental native Linux SafeInCloud password editor with Google Drive"
 requires-python = ">=3.11"
 license = "MIT"
@@ -17,4 +17,4 @@ safeincloud-linux = "safeincloud_linux.__main__:main"
 include = ["safeincloud_linux*"]
 
 [tool.setuptools.package-data]
-safeincloud_linux = ["assets/*.svg"]
+safeincloud_linux = ["assets/*.svg", "assets/fonts/*.ttf", "assets/fonts/*OFL.txt"]

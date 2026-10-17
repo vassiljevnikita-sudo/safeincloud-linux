@@ -4,59 +4,27 @@ import hmac
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QSettings, QEvent
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer, QSettings, QEvent, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFrame, QHBoxLayout,
     QVBoxLayout, QLabel, QPushButton, QLineEdit, QListWidget, QListWidgetItem,
     QStackedWidget, QScrollArea, QDialog, QFormLayout, QTextEdit,
     QDialogButtonBox, QMessageBox, QSplitter)
 from .vault import Vault
-
-STYLE = '''
-QWidget { font-family: "Inter", "Noto Sans", sans-serif; font-size: 14px; color: #23334c; }
-QMainWindow, #content { background: #f4f6fa; }
-#sidebar { background: #14243c; } #sidebar QLabel { color: #9faec2; }
-#sidebar QLabel#brand { color: white; font-size: 19px; font-weight: 700; } #brandSubtitle { color: #8da3c0; font-size: 12px; }
-#sidebar QListWidget { background: transparent; border: none; color: #bdcadc; outline: none; }
-#sidebar QListWidget::item { padding: 14px 12px; border-radius: 8px; margin: 2px 0; }
-#sidebar QListWidget::item:selected { background: #294263; color: white; }
-#sidebar #cloud { background: #20344f; border-radius: 10px; padding: 14px; color: #c0d0e6; font-size: 12px; }
-QPushButton { border: 1px solid #dce3ed; background: white; padding: 9px 14px; border-radius: 8px; font-weight: 600; }
-QPushButton:hover { background: #edf3ff; border-color: #adc3e8; }
-QPushButton:disabled { color: #9fa9b8; background: #f1f3f7; }
-QPushButton#primary { background: #2563eb; border-color: #2563eb; color: white; }
-QPushButton#primary:hover { background: #1d4ed8; }
-QPushButton#danger { color: #bb4455; border: none; background: transparent; }
-QPushButton#quiet { border: none; background: transparent; color: #667994; }
-QLineEdit, QTextEdit { border: 1px solid #dfe5ee; border-radius: 8px; background: white; padding: 10px; selection-background-color: #bfd5ff; }
-QLineEdit:focus, QTextEdit:focus { border: 1px solid #6595ee; }
-#entries { background: transparent; border: none; outline: none; }
-#entries::item { background: white; padding: 16px 12px; margin: 3px 0; border: 1px solid #e5eaf1; border-radius: 10px; }
-#entries::item:selected { background: #eaf1ff; border: 1px solid #8eaff0; color: #1646a1; }
-#details { background: white; border-radius: 14px; }
-#field { background: #f7f9fc; border: 1px solid #e9eef5; border-radius: 10px; }
-#field QLabel { border: none; background: transparent; }
-#muted { color: #7b8ba2; font-size: 12px; }
-#heading { font-size: 27px; font-weight: 700; color: #1d2c45; }
-#detailTitle { font-size: 28px; font-weight: 700; }
-#avatar { background: #eaf0ff; color: #3864c0; border-radius: 14px; font-size: 26px; font-weight: 700; }
-#unlockCard { background: white; border: 1px solid #e2e8f2; border-radius: 18px; }
-#status { color: #74849a; font-size: 12px; }
-QScrollArea { border: none; background: transparent; }
-QSplitter::handle { background: transparent; width: 14px; }
-QDialog { background: #f8fafd; }
-#detailBody { background: white; }
-QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }
-QScrollBar::handle:vertical { background: #d7dfe9; border-radius: 3px; min-height: 24px; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-'''
+from .qt_theme import load_fonts, icon
+from .qt_system_theme import system_theme, bind_icon
+from .qt_lists import EntryDelegate, NavigationDelegate, FavoriteSwitch, TITLE, LOGIN, FAVORITE, COUNT
 
 
-def button(text, callback, name=None):
+
+
+def button(text, callback, name=None, icon_name=None):
     value = QPushButton(text)
     if name:
         value.setObjectName(name)
+    if icon_name:
+        bind_icon(value, icon_name, 'primary_text' if name == 'primary' else 'muted')
+    value.setAccessibleName(text)
     value.clicked.connect(callback)
     value.setCursor(Qt.PointingHandCursor)
     return value
@@ -64,9 +32,49 @@ def button(text, callback, name=None):
 
 def label(text, name=None):
     value = QLabel(text)
+    value.setTextFormat(Qt.PlainText)
     if name:
         value.setObjectName(name)
     return value
+
+
+class CopyValueLabel(QLabel):
+    """Copy the underlying credential on click while retaining its masked display."""
+    activated = Signal()
+
+    def __init__(self, text, callback, name=None):
+        super().__init__(text)
+        self.setTextFormat(Qt.PlainText)
+        if name:
+            self.setObjectName(name)
+        self.setProperty('copyable', True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setToolTip('Zum Kopieren klicken (oder Eingabetaste drücken)')
+        self.activated.connect(callback)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setFocus(Qt.MouseFocusReason)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self.rect().contains(event.position().toPoint()):
+                self.activated.emit()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            if not event.isAutoRepeat():
+                self.activated.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 def public_login(card):
@@ -85,6 +93,7 @@ class Editor(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         body = QWidget()
+        body.setObjectName('detailBody')
         form = QFormLayout(body)
         form.setVerticalSpacing(14)
         self.title_input = QLineEdit(card.get('title', '') if card is not None else '')
@@ -141,10 +150,11 @@ class Window(QMainWindow):
         self.jobs = queue.Queue()
         self.editors = []
         self.settings = QSettings('SafeInCloudLinux', 'Desktop') if settings else None
+        load_fonts()
         self.setWindowTitle('SafeInCloud Linux')
-        self.resize(1180, 760)
+        self.resize(1320, 820)
         self.setMinimumSize(920, 620)
-        self.setStyleSheet(STYLE)
+        system_theme()
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
         self.build_unlock()
@@ -171,8 +181,10 @@ class Window(QMainWindow):
         inner = QVBoxLayout(card)
         inner.setContentsMargins(38, 34, 38, 34)
         inner.setSpacing(18)
-        inner.addWidget(label('▣', 'heading'))
-        inner.addWidget(label('Deine Passwörter.\nAn einem sicheren Ort.', 'heading'))
+        mark = label('')
+        bind_icon(mark, 'key', 'accent', 36)
+        inner.addWidget(mark)
+        inner.addWidget(label('SafeInCloud Linux', 'heading'))
         intro = label('Entsperre deine Datenbank mit deinem\nMasterpasswort.', 'muted')
         inner.addWidget(intro)
         self.password = QLineEdit()
@@ -184,7 +196,7 @@ class Window(QMainWindow):
         self.unlock_error = label('', 'status')
         self.unlock_error.setWordWrap(True)
         inner.addWidget(self.unlock_error)
-        inner.addWidget(label('Verschlüsselt gespeichert · Lokal entsperrt', 'muted'))
+        inner.addWidget(label('Dein Masterpasswort bleibt auf diesem Gerät.', 'muted'))
         layout.addWidget(card, alignment=Qt.AlignHCenter)
         layout.addStretch()
         self.stack.addWidget(page)
@@ -194,73 +206,121 @@ class Window(QMainWindow):
         outer = QHBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
+
         side = QFrame()
         side.setObjectName('sidebar')
         side.setFixedWidth(220)
         nav = QVBoxLayout(side)
-        nav.setContentsMargins(22, 30, 22, 24)
-        nav.setSpacing(14)
-        nav.addWidget(label('▣  SafeInCloud', 'brand'))
-        nav.addWidget(label('DEIN PASSWORT-TRESOR', 'brandSubtitle'))
-        nav.addSpacing(26)
-        nav.addWidget(label('BIBLIOTHEK', 'brandSubtitle'))
+        nav.setContentsMargins(0, 0, 0, 12)
+        nav.setSpacing(6)
+        brand = QWidget()
+        brand.setObjectName('paneHeader')
+        brand.setFixedHeight(58)
+        brand_row = QHBoxLayout(brand)
+        brand_row.setContentsMargins(16, 0, 12, 0)
+        mark = label('')
+        bind_icon(mark, 'key', 'accent', 20)
+        brand_row.addWidget(mark)
+        brand_row.addWidget(label('SafeInCloud Linux', 'brand'))
+        nav.addWidget(brand)
         self.navigation = QListWidget()
+        self.navigation.setObjectName('nav')
+        self.navigation.setMouseTracking(True)
+        self.navigation.setItemDelegate(NavigationDelegate(self.navigation))
+        self.navigation.setAccessibleName('Labels und Favoriten')
         self.navigation.currentRowChanged.connect(lambda _: self.refresh_entries())
-        nav.addWidget(self.navigation)
+        nav.addWidget(self.navigation, 1)
         self.cloud = label('', 'cloud')
         self.cloud.setWordWrap(True)
         nav.addWidget(self.cloud)
-        nav.addWidget(label('Linux · Lokal verschlüsselt', 'brandSubtitle'))
         outer.addWidget(side)
-        content = QWidget()
-        content.setObjectName('content')
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(28, 28, 28, 20)
-        content_layout.setSpacing(22)
-        top = QHBoxLayout()
-        heading = QVBoxLayout()
-        heading.setSpacing(4)
-        heading.addWidget(label('Passwörter', 'heading'))
-        heading.addWidget(label('Alles Wichtige. Einfach griffbereit.', 'muted'))
-        top.addLayout(heading)
-        top.addStretch()
-        self.sync_button = button('↻  Drive abgleichen', self.sync)
-        self.sync_button.setVisible(self.on_sync is not None)
-        top.addWidget(self.sync_button)
-        top.addWidget(button('Sperren', self.lock, 'quiet'))
-        self.add_button = button('+  Neues Passwort', lambda: self.edit_entry(True), 'primary')
-        top.addWidget(self.add_button)
-        content_layout.addLayout(top)
+
         split = QSplitter()
-        split.setHandleWidth(18)
-        center = QWidget()
+        split.setChildrenCollapsible(False)
+        split.setHandleWidth(1)
+        center = QFrame()
+        center.setObjectName('listPane')
+        center.setMinimumWidth(270)
         middle = QVBoxLayout(center)
         middle.setContentsMargins(0, 0, 0, 0)
-        middle.setSpacing(12)
+        middle.setSpacing(0)
+        search_header = QWidget()
+        search_header.setObjectName('paneHeader')
+        search_header.setFixedHeight(58)
+        search_row = QHBoxLayout(search_header)
+        search_row.setContentsMargins(10, 8, 8, 8)
+        search_row.setSpacing(6)
         self.search = QLineEdit()
-        self.search.setPlaceholderText('Passwörter durchsuchen …')
+        self.search.setObjectName('search')
+        self.search.setPlaceholderText('Suchen')
+        self.search.setAccessibleName('Passwörter durchsuchen')
+        self.search.setClearButtonEnabled(True)
+        self.search_action = self.search.addAction(icon('search'), QLineEdit.LeadingPosition)
+        bind_icon(self.search_action, 'search')
         self.search.textChanged.connect(self.refresh_entries)
-        middle.addWidget(self.search)
-        self.count = label('', 'muted')
-        middle.addWidget(self.count)
+        search_row.addWidget(self.search, 1)
+        self.add_button = button('', lambda: self.edit_entry(True), 'iconButton', 'plus')
+        self.add_button.setToolTip('Neues Passwort (Strg+N)')
+        self.add_button.setAccessibleName('Neues Passwort')
+        search_row.addWidget(self.add_button)
+        middle.addWidget(search_header)
         self.entries = QListWidget()
         self.entries.setObjectName('entries')
-        self.entries.setSpacing(3)
+        self.entries.setAccessibleName('Passworteinträge')
+        self.entries.setMouseTracking(True)
+        self.entries.setItemDelegate(EntryDelegate(self.entries))
         self.entries.currentItemChanged.connect(self.show_entry)
-        middle.addWidget(self.entries)
+        middle.addWidget(self.entries, 1)
+        self.count = label('', 'muted')
+        self.count.setContentsMargins(16, 8, 10, 10)
+        middle.addWidget(self.count)
         split.addWidget(center)
+
+        content = QWidget()
+        content.setObjectName('content')
+        content.setMinimumWidth(390)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        top = QWidget()
+        top.setObjectName('paneHeader')
+        top.setFixedHeight(58)
+        top_row = QHBoxLayout(top)
+        top_row.setContentsMargins(16, 6, 16, 6)
+        top_row.addStretch()
+        self.sync_button = button('Drive abgleichen', self.sync, 'quiet', 'sync')
+        self.sync_button.setVisible(self.on_sync is not None)
+        top_row.addWidget(self.sync_button)
+        top_row.addWidget(button('Sperren', self.lock, 'quiet', 'lock'))
+        content_layout.addWidget(top)
+        detail_scroll = QScrollArea()
+        detail_scroll.setWidgetResizable(True)
+        detail_scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.detail = QFrame()
         self.detail.setObjectName('details')
+        self.detail.setMaximumWidth(676)
         self.detail_layout = QVBoxLayout(self.detail)
-        self.detail_layout.setContentsMargins(27, 28, 27, 24)
-        split.addWidget(self.detail)
-        split.setSizes([340, 480])
-        content_layout.addWidget(split, 1)
+        self.detail_layout.setContentsMargins(28, 30, 28, 22)
+        self.detail_layout.setSpacing(18)
+        detail_scroll.setWidget(self.detail)
+        content_layout.addWidget(detail_scroll, 1)
         self.status = label('Lokal gespeichert', 'status')
+        self.status.setWordWrap(True)
+        self.status.setContentsMargins(20, 8, 20, 12)
+        self.status.setAccessibleName('Speicher- und Synchronisationsstatus')
         content_layout.addWidget(self.status)
-        outer.addWidget(content, 1)
+        split.addWidget(content)
+        split.setStretchFactor(0, 0)
+        split.setStretchFactor(1, 1)
+        split.setSizes([330, 770])
+        outer.addWidget(split, 1)
         self.stack.addWidget(page)
         self.empty_detail()
+        for key, callback in [('Ctrl+F', self.search.setFocus),
+                              ('Ctrl+N', lambda: self.edit_entry(True)),
+                              ('Ctrl+E', self.edit_entry), ('Ctrl+L', self.lock)]:
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.activated.connect(callback)
 
     def eventFilter(self, obj, event):
         if self.vault and event.type() in (QEvent.KeyPress, QEvent.MouseButtonPress, QEvent.Wheel):
@@ -299,11 +359,17 @@ class Window(QMainWindow):
         previous = self.navigation.currentRow()
         self.navigation.blockSignals(True)
         self.navigation.clear()
-        self.navigation.addItem('▤   Alle Einträge')
-        self.navigation.addItem('☆   Favoriten')
+        cards = self.vault.cards()
+        all_entries = QListWidgetItem('Alle Einträge')
+        all_entries.setData(COUNT, len(cards))
+        self.navigation.addItem(all_entries)
+        favorites = QListWidgetItem('Favoriten')
+        favorites.setData(COUNT, sum(c.get('star', '').lower() == 'true' for c in cards))
+        self.navigation.addItem(favorites)
         for item in self.vault.root.findall('label'):
-            entry = QListWidgetItem('○   ' + item.get('name', 'Label'))
+            entry = QListWidgetItem(item.get('name', 'Label'))
             entry.setData(Qt.UserRole, item.get('id'))
+            entry.setData(COUNT, sum(item.get('id') in [v.text for v in c.findall('label_id')] for c in cards))
             self.navigation.addItem(entry)
         self.navigation.setCurrentRow(max(0, min(previous, self.navigation.count() - 1)))
         self.navigation.blockSignals(False)
@@ -333,12 +399,15 @@ class Window(QMainWindow):
             title = card.get('title', 'Ohne Titel')
             entry = QListWidgetItem(f'{title[:1].upper()}    {title}\n      {public_login(card) or "Passwort-Eintrag"}')
             entry.setData(Qt.UserRole, card.get('id'))
+            entry.setData(TITLE, title)
+            entry.setData(LOGIN, public_login(card))
+            entry.setData(FAVORITE, card.get('star', '').lower() == 'true')
             self.entries.addItem(entry)
             if card.get('id') == selected:
                 selection = i
         self.entries.setCurrentRow(selection)
         self.entries.blockSignals(False)
-        self.count.setText(f'{len(cards)} EINTRÄGE')
+        self.count.setText(f'{len(cards)} Eintrag' if len(cards) == 1 else f'{len(cards)} Einträge')
         self.show_entry(self.entries.currentItem())
 
     def current_card(self):
@@ -368,66 +437,124 @@ class Window(QMainWindow):
             self.empty_detail()
             return
         self.clear_detail()
+        header = QWidget()
+        header.setObjectName('entryHeader')
+        head = QHBoxLayout(header)
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(18)
         avatar = label(card.get('title', '?')[:1].upper(), 'avatar')
-        avatar.setFixedSize(62, 62)
+        avatar.setFixedSize(60, 60)
         avatar.setAlignment(Qt.AlignCenter)
-        self.detail_layout.addWidget(avatar)
+        head.addWidget(avatar)
         title = label(card.get('title', ''), 'detailTitle')
         title.setWordWrap(True)
-        self.detail_layout.addWidget(title)
-        self.detail_layout.addWidget(label('ZUGANGSDATEN', 'muted'))
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        body = QWidget()
-        body.setObjectName('detailBody')
-        scroll.viewport().setStyleSheet('background: white;')
-        rows = QVBoxLayout(body)
-        rows.setContentsMargins(0, 10, 0, 0)
-        rows.setSpacing(12)
-        for field in card.findall('field'):
+        head.addWidget(title, 1)
+        self.edit_button = button('Bearbeiten', self.edit_entry, None, 'edit')
+        self.edit_button.setEnabled(not self.busy)
+        head.addWidget(self.edit_button)
+        self.detail_layout.addWidget(header)
+        self.detail_layout.addSpacing(6)
+        self.detail_layout.addWidget(label('Zugangsdaten', 'sectionTitle'))
+        group = QFrame()
+        group.setObjectName('fieldGroup')
+        rows = QVBoxLayout(group)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(0)
+        fields = card.findall('field')
+        for index, field in enumerate(fields):
             value = field.text or ''
             box = QFrame()
-            box.setObjectName('field')
-            layout = QVBoxLayout(box)
-            layout.setContentsMargins(15, 12, 12, 12)
-            layout.addWidget(label(field.get('name', ''), 'muted'))
-            line = QHBoxLayout()
+            box.setObjectName('fieldLast' if index == len(fields) - 1 else 'field')
+            line = QHBoxLayout(box)
+            line.setContentsMargins(15, 11, 9, 11)
+            line.setSpacing(5)
+            values = QVBoxLayout()
+            values.setSpacing(3)
+            name = field.get('name', '')
+            if field.get('type', '').lower() in ('login', 'email'):
+                name = 'Benutzername / E-Mail'
+            values.addWidget(label(name, 'fieldLabel'))
             public = field.get('type', '').lower() in ('login', 'email', 'website', 'url')
-            text = label(value if public else '••••••••••••')
+            text = CopyValueLabel(value if public else '••••••••••••',
+                                  lambda v=value: self.copy_value(v),
+                                  None if public else 'secretValue')
+            text.setAccessibleName(name + ' kopieren')
             text.setWordWrap(True)
-            line.addWidget(text, 1)
+            values.addWidget(text)
+            line.addLayout(values, 1)
             if not public:
-                eye = button('Anzeigen', lambda: None, 'quiet')
+                eye = button('Anzeigen', lambda: None, 'quiet', 'eye')
+                eye.setAccessibleName(name + ' anzeigen')
                 eye.clicked.connect(lambda checked=False, w=text, v=value, b=eye: self.toggle_secret(w, v, b))
                 line.addWidget(eye)
-            line.addWidget(button('Kopieren', lambda checked=False, v=value: self.copy_value(v), 'quiet'))
-            layout.addLayout(line)
+            copy = button('', lambda checked=False, v=value: self.copy_value(v), 'iconButton', 'copy')
+            copy.setToolTip(name + ' kopieren')
+            copy.setAccessibleName(name + ' kopieren')
+            line.addWidget(copy)
             rows.addWidget(box)
+        self.detail_layout.addWidget(group)
+
+        metadata = QFrame()
+        metadata.setObjectName('metadata')
+        meta = QVBoxLayout(metadata)
+        meta.setContentsMargins(15, 12, 15, 12)
+        meta.setSpacing(16)
+        labels = {e.get('id'): e.get('name', '') for e in self.vault.root.findall('label')}
+        names = ', '.join(labels.get(v.text, '') for v in card.findall('label_id') if v.text in labels)
+        label_row = QHBoxLayout()
+        label_row.addWidget(label('Label'))
+        label_names = label(names or 'Ohne Label', 'muted')
+        label_names.setWordWrap(True)
+        label_row.addWidget(label_names, 1, Qt.AlignRight)
+        meta.addLayout(label_row)
+        favorite_row = QHBoxLayout()
+        favorite_row.addWidget(label('Favorit'))
+        favorite_row.addStretch()
+        favorite = FavoriteSwitch()
+        favorite.setAccessibleName('Als Favorit markieren')
+        favorite.setChecked(card.get('star', '').lower() == 'true')
+        favorite.setEnabled(not self.busy)
+        favorite.clicked.connect(self.toggle_favorite)
+        favorite_row.addWidget(favorite)
+        meta.addLayout(favorite_row)
+        self.detail_layout.addWidget(metadata)
         notes = card.findtext('notes', '')
         if notes:
-            rows.addWidget(label('NOTIZEN', 'muted'))
+            self.detail_layout.addWidget(label('Notiz', 'sectionTitle'))
+            note_box = QFrame()
+            note_box.setObjectName('noteBox')
+            note_layout = QVBoxLayout(note_box)
+            note_layout.setContentsMargins(15, 13, 15, 13)
             note = label(notes)
             note.setWordWrap(True)
-            rows.addWidget(note)
-        rows.addStretch()
-        scroll.setWidget(body)
-        self.detail_layout.addWidget(scroll, 1)
+            note.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+            note_layout.addWidget(note)
+            self.detail_layout.addWidget(note_box)
+        self.detail_layout.addStretch(1)
         footer = QWidget()
         controls = QHBoxLayout(footer)
         controls.setContentsMargins(0, 8, 0, 0)
-        self.edit_button = button('Bearbeiten', self.edit_entry)
-        self.delete_button = button('Eintrag löschen', self.delete_entry, 'danger')
-        self.edit_button.setEnabled(not self.busy)
-        self.delete_button.setEnabled(not self.busy)
-        controls.addWidget(self.edit_button)
         controls.addStretch()
+        self.delete_button = button('Eintrag löschen', self.delete_entry, 'danger')
+        self.delete_button.setEnabled(not self.busy)
         controls.addWidget(self.delete_button)
         self.detail_layout.addWidget(footer)
+
+    def toggle_favorite(self, checked):
+        card = self.current_card()
+        if card is None or self.busy:
+            return
+        fields = [dict(name=f.get('name', ''), type=f.get('type', 'text'), value=f.text or '') for f in card.findall('field')]
+        self.vault.upsert(card.get('id'), card.get('title', ''), fields, card.findtext('notes', ''))
+        card.set('star', 'true' if checked else 'false')
+        self.persist()
 
     def toggle_secret(self, widget, value, control):
         reveal = control.text() == 'Anzeigen'
         widget.setText(value if reveal else '••••••••••••')
         control.setText('Verbergen' if reveal else 'Anzeigen')
+        bind_icon(control, 'hide' if reveal else 'eye')
+        control.setAccessibleName('Passwort verbergen' if reveal else 'Passwort anzeigen')
 
     def copy_value(self, value):
         QApplication.clipboard().setText(value)
@@ -473,6 +600,7 @@ class Window(QMainWindow):
             self.status.setText('Speichern fehlgeschlagen. Änderungen bleiben im entsperrten Tresor: ' + str(exc))
             self.refresh_entries()
             return False
+        self.refresh_navigation()
         self.refresh_entries()
         self.status.setText('Lokal gespeichert · verschlüsselte Sicherung erstellt')
         if self.on_sync:

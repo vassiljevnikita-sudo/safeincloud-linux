@@ -118,3 +118,94 @@ class QtDesktopTests(unittest.TestCase):
         control.click()
         self.assertEqual(control.text(), 'Anzeigen')
         self.assertFalse(any(w.text() == 'sample-only' and w.isVisible() for w in self.window.detail.findChildren(QLabel)))
+
+    def test_favorite_toggle_persists_without_changing_card_fields(self):
+        from PySide6.QtWidgets import QCheckBox
+        self.window.unlock('test')
+        self.window.navigation.setCurrentRow(1)
+        favorite = self.window.detail.findChild(QCheckBox)
+        self.assertTrue(favorite.isChecked())
+        favorite.click()
+        self.assertEqual(self.window.entries.count(), 0)
+        reopened = Vault.open(self.path, 'test')
+        card = reopened.cards()[0]
+        self.assertEqual(card.get('star'), 'false')
+        self.assertEqual(card.findtext("field[@type='password']"), 'sample-only')
+        self.assertEqual(card.findtext('label_id'), '9')
+        reopened.close()
+
+    def test_credential_text_click_copies_underlying_value_without_revealing(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QPushButton
+        from safeincloud_linux.qt_ui import CopyValueLabel
+        self.window.unlock('test')
+        self.app.processEvents()
+        values = self.window.detail.findChildren(CopyValueLabel)
+        login = next(w for w in values if w.text() == 'demo@example.test')
+        password = next(w for w in values if w.objectName() == 'secretValue')
+        QTest.mouseClick(login, Qt.LeftButton)
+        self.assertEqual(self.app.clipboard().text(), 'demo@example.test')
+        QTest.mouseClick(password, Qt.LeftButton)
+        self.assertEqual(self.app.clipboard().text(), 'sample-only')
+        self.assertEqual(password.text(), '••••••••••••')
+        self.assertIn('30 Sekunden', self.window.status.text())
+        self.app.clipboard().setText('unrelated')
+        QTest.mouseClick(password, Qt.RightButton)
+        self.assertEqual(self.app.clipboard().text(), 'unrelated')
+        QTest.keyClick(password, Qt.Key_Return)
+        self.assertEqual(self.app.clipboard().text(), 'sample-only')
+        reveal = next(b for b in self.window.detail.findChildren(QPushButton) if b.text() == 'Anzeigen')
+        reveal.click()
+        QTest.mouseClick(password, Qt.LeftButton)
+        self.assertEqual(self.app.clipboard().text(), 'sample-only')
+        self.assertEqual(password.text(), 'sample-only')
+
+    def test_live_system_theme_switch_preserves_unsaved_editor_and_copy(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QPalette
+        from PySide6.QtTest import QTest
+        from safeincloud_linux.qt_ui import CopyValueLabel
+        from safeincloud_linux.qt_system_theme import system_theme
+        theme = system_theme()
+        original_dark = theme.dark
+        self.addCleanup(lambda: theme.set_dark(original_dark))
+        self.window.unlock('test')
+        encrypted_before = self.path.read_bytes()
+        editor = Editor(self.window, self.window.current_card())
+        editor.show()
+        editor.title_input.setText('Noch nicht gespeichert')
+        self.addCleanup(editor.deleteLater)
+        password = self.window.detail.findChild(CopyValueLabel, 'secretValue')
+        selected = self.window.selected_id
+        for scheme in (Qt.ColorScheme.Dark, Qt.ColorScheme.Light):
+            # Emit the real Qt notification without changing the user's desktop settings.
+            self.app.styleHints().colorSchemeChanged.emit(scheme)
+            self.app.processEvents()
+            dark = scheme == Qt.ColorScheme.Dark
+            self.assertEqual(theme.dark, dark)
+            self.assertEqual(self.app.palette().color(QPalette.Window).lightness() < 128, dark)
+            self.assertEqual(editor.title_input.text(), 'Noch nicht gespeichert')
+            self.assertTrue(editor.isVisible())
+            self.assertEqual(self.window.selected_id, selected)
+            self.assertEqual(self.path.read_bytes(), encrypted_before)
+            QTest.mouseClick(password, Qt.LeftButton)
+            self.assertEqual(self.app.clipboard().text(), 'sample-only')
+            self.assertEqual(password.text(), '••••••••••••')
+        editor.close()
+
+    def test_linux_portal_appearance_notifications(self):
+        from PySide6.QtDBus import QDBusVariant
+        from safeincloud_linux.qt_system_theme import system_theme
+        theme = system_theme()
+        original_dark, original_portal = theme.dark, theme._portal_scheme
+        def restore():
+            theme._portal_scheme = original_portal
+            theme.set_dark(original_dark)
+        self.addCleanup(restore)
+        theme.portal_setting_changed('org.freedesktop.appearance', 'color-scheme', QDBusVariant(QDBusVariant(1)))
+        self.assertTrue(theme.dark)
+        theme.portal_setting_changed('unrelated.setting', 'color-scheme', QDBusVariant(2))
+        self.assertTrue(theme.dark)
+        theme.portal_setting_changed('org.freedesktop.appearance', 'color-scheme', QDBusVariant(2))
+        self.assertFalse(theme.dark)
