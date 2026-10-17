@@ -1,109 +1,160 @@
-"""Local file selection and Google Drive login/download, before vault unlocking."""
+"""Automatic Safe app-folder discovery before local vault unlocking."""
+import os
 from pathlib import Path
-import queue
-import tempfile
 import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from PySide6.QtCore import QObject, Signal, QTimer
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QFileDialog
+from .official_drive import OfficialDrive
+from .qt_ui import STYLE, button, label, run
 
-from .drive import GoogleDrive
-from .gui import run
+
+class Delivery(QObject):
+    done = Signal(object, object)
 
 
-def choose_source(directory):
-    app = tk.Tk()
-    app.title("SafeInCloud Linux — Datenbank öffnen")
-    app.geometry("720x460")
-    selected = []
-    events = queue.Queue()
-    drive = GoogleDrive()
-    status = tk.StringVar(value="Lokale Datei öffnen oder eine Kopie aus Google Drive laden.")
-    ttk.Label(app, textvariable=status, wraplength=680).pack(padx=16, pady=12)
-    buttons = ttk.Frame(app)
-    buttons.pack(fill="x", padx=16)
-    listing = tk.Listbox(app, exportselection=False)
+class SourceWindow(QDialog):
+    def __init__(self, directory, drive=None):
+        super().__init__()
+        self.directory = directory
+        self.drive = drive or OfficialDrive()
+        self.source = None
+        self.candidates = []
+        self.callback = None
+        self.setWindowTitle('SafeInCloud Linux')
+        self.setMinimumSize(640, 440)
+        self.setStyleSheet(STYLE)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(32, 28, 32, 24)
+        layout.setSpacing(14)
+        layout.addWidget(label('SAFE  /  LINUX', 'muted'))
+        layout.addWidget(label('Deine Passwörter.\nAuf deinen Geräten.', 'heading'))
+        self.status = label('Verbinde Google Drive. Deine Safe-Datenbank wird danach automatisch geöffnet.', 'status')
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        actions = QHBoxLayout()
+        self.connect_button = button('Google Drive verbinden', self.connect, 'primary')
+        self.search_button = button('Erneut suchen', self.search)
+        self.local_button = button('Lokale Datei', self.local, 'quiet')
+        self.buttons = [self.connect_button, self.search_button, self.local_button]
+        for item in self.buttons:
+            actions.addWidget(item)
+        layout.addLayout(actions)
+        self.listing = QListWidget()
+        self.listing.setObjectName('entries')
+        self.listing.hide()
+        layout.addWidget(self.listing, 1)
+        self.open_button = button('Ausgewählte Datenbank öffnen', self.open_selected, 'primary')
+        self.open_button.hide()
+        self.buttons.append(self.open_button)
+        layout.addWidget(self.open_button)
+        layout.addStretch()
+        notice = label('Unabhängiger Linux-Client. Die Anmeldung verwendet deine lokal vorhandene\n'
+                       'Safe-App-Konfiguration; Google zeigt dabei SafeInCloud. Dein Masterpasswort bleibt lokal.', 'muted')
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        self.delivery = Delivery(self)
+        self.delivery.done.connect(self.completed)
+        if self.drive.configured():
+            QTimer.singleShot(100, self.search)
 
-    def finish(path):
-        if path:
-            selected.append(str(path))
-            app.quit()
-
-    def local():
-        finish(filedialog.askopenfilename(parent=app, title="Datenbankkopie öffnen",
-               filetypes=[("SafeInCloud-Datenbank", "*.db"), ("Alle Dateien", "*")]))
-
-    def busy(value):
-        for button in controls:
-            button.configure(state="disabled" if value else "normal")
-
-    def task(work, callback, label):
-        busy(True)
-        status.set(label)
+    def job(self, work, callback, message):
+        self.callback = callback
+        self.status.setText(message)
+        for item in self.buttons:
+            item.setEnabled(False)
         def worker():
             try:
-                events.put((callback, work(), None))
-            except Exception as error:
-                events.put((callback, None, str(error)))
+                result, error = work(), None
+            except Exception as exc:
+                result, error = None, str(exc)
+            try:
+                self.delivery.done.emit(result, error)
+            except RuntimeError:
+                pass  # Window closed during login/download.
         threading.Thread(target=worker, daemon=True).start()
 
-    def listed(paths):
-        listing.delete(0, "end")
-        for path in paths:
-            listing.insert("end", path)
-        status.set(f"{len(paths)} Datenbankdatei(en) gefunden." if paths else
-                   "Keine .db-Datei gefunden. Die Kopie muss als normale Datei in deinem Drive liegen.")
+    def completed(self, result, error):
+        for item in self.buttons:
+            item.setEnabled(True)
+        callback, self.callback = self.callback, None
+        if error:
+            self.status.setText(error)
+        elif callback:
+            callback(result)
 
-    def refresh():
-        task(drive.list_databases, listed, "Google Drive wird nach .db-Dateien durchsucht …")
+    def connect(self):
+        self.job(self.drive.connect, lambda _: self.search(), 'Bitte die Google-Anmeldung im Browser abschließen …')
 
-    def connect():
-        task(drive.connect, lambda _: refresh(), "Bitte im Browser bei Google anmelden. Warte auf die Bestätigung …")
+    def search(self):
+        self.job(self.drive.discover, self.discovered, 'Deine Safe-Datenbank wird gesucht …')
 
-    def download():
-        if not listing.curselection():
-            messagebox.showinfo("Datei auswählen", "Bitte zuerst eine Datenbank aus der Liste auswählen.", parent=app)
-            return
-        path = listing.get(listing.curselection()[0])
-        task(lambda: drive.download(path, directory), finish, "Verschlüsselte Datenbankkopie wird heruntergeladen …")
-
-    controls = [ttk.Button(buttons, text=text, command=command) for text, command in [
-        ("Lokale Datei", local), ("Google Drive verbinden", connect), ("Drive-Dateien laden", refresh)]]
-    for button in controls:
-        button.pack(side="left", padx=4)
-    listing.pack(fill="both", expand=True, padx=16, pady=12)
-    open_button = ttk.Button(app, text="Aus Google Drive öffnen", command=download)
-    open_button.pack(pady=6)
-    controls.append(open_button)
-    ttk.Label(app, text="Nur lesender Zugriff. Die temporäre Kopie bleibt verschlüsselt.\n"
-              "Safes versteckter App-Ordner ist für andere Anwendungen nicht zugänglich.",
-              wraplength=680).pack(pady=10)
-
-    def poll():
-        try:
-            callback, result, error = events.get_nowait()
-        except queue.Empty:
-            pass
+    def discovered(self, rows):
+        self.candidates = rows
+        self.listing.clear()
+        for row in rows:
+            self.listing.addItem(row['path'])
+        preferred = self.drive.preferred(rows)
+        if preferred:
+            self.open(preferred)
+        elif rows:
+            self.status.setText('Mehrere Datenbanken gefunden. Wähle einmal deine Hauptdatenbank aus.')
+            self.listing.show()
+            self.open_button.show()
         else:
-            busy(False)
-            if error:
-                status.set("Vorgang fehlgeschlagen.")
-                messagebox.showerror("Google Drive", error, parent=app)
-            else:
-                callback(result)
-        if app.winfo_exists():
-            app.after(100, poll)
-    app.protocol("WM_DELETE_WINDOW", app.quit)
-    app.after(100, poll)
-    app.mainloop()
-    app.destroy()
-    return selected[0] if selected else None
+            self.status.setText('Keine Safe-Datenbank im privaten App-Ordner gefunden. Verwende dasselbe Google-Konto wie in Safe.')
+
+    def open_selected(self):
+        row = self.listing.currentRow()
+        if row >= 0:
+            self.open(self.candidates[row])
+
+    def open(self, candidate):
+        self.job(lambda: self.drive.open_candidate(candidate, self.directory), self.downloaded,
+                 'Deine verschlüsselte Safe-Datenbank wird geladen …')
+
+    def downloaded(self, session):
+        self.source = (str(session.path), session)
+        self.accept()
+
+    def local(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Safe-Datenbank öffnen', '', 'SafeInCloud (*.db);;Alle Dateien (*)')
+        if path:
+            self.source = (path, None)
+            self.accept()
+
+
+def choose_source(directory, on_source=None):
+    app = QApplication.instance() or QApplication([])
+    app.setQuitOnLastWindowClosed(False)
+    window = SourceWindow(directory)
+    window.exec()
+    app.setQuitOnLastWindowClosed(True)
+    if window.source:
+        path, session = window.source
+        if on_source:
+            on_source(session)
+        return path
+    return None
 
 
 def launch(path=None):
+    app = QApplication.instance() or QApplication([])
+    app.setApplicationName('SafeInCloud Linux')
+    app.setDesktopFileName('safeincloud-linux')
+    app.setWindowIcon(QIcon(str(Path(__file__).parent / 'assets/icon.svg')))
+    app.setOrganizationName('SafeInCloud Linux')
     if path:
         return run(path)
-    with tempfile.TemporaryDirectory(prefix="safeincloud-linux-") as directory:
-        selected = choose_source(directory)
-        if selected:
-            return run(selected)
+    directory = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'safeincloud-linux/vaults'
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
+    drive = OfficialDrive()
+    cached = drive.cached_session(directory) if drive.configured() else None
+    if cached is not None:
+        return run(cached.path, on_sync=cached)
+    sessions = []
+    selected = choose_source(directory, sessions.append)
+    if selected:
+        return run(selected, on_sync=sessions[0] if sessions else None)
     return 0

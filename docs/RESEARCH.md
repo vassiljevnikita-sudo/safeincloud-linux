@@ -57,3 +57,15 @@ fake entries, an ASCII password and then a Unicode password, exported/backed up
 by the current official client. Test opening those locally before considering
 real data. Cloud writes and merging require a separate design and compatibility
 suite and are intentionally absent from this prototype.
+
+## Native editor and private Drive follow-up
+
+The application now has a Qt list/detail desktop and local encrypted editing.
+Safe's Google driver was inspected through REA 6.5.0 and focused .NET IL;
+[Google protocol notes](GOOGLE_WINDOWS.md) describe the separate root/app-data
+paths and the freshly authorized installed-app compatibility flow.
+Live private-folder reads succeeded after user login. Conditional writes were
+verified on a separate disposable encrypted file, including HTTP412 conflict
+rejection and cleanup, without modifying the real vault. Local/model/OAuth/Qt
+checks are in the repository test suite. The synthetic UI preview is generated
+from fictional entries, not the user's real vault.

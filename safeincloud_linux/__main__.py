@@ -7,7 +7,7 @@ from . import DatabaseError, cards, load
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Read-only SafeInCloud viewer (experimental)")
+    parser = argparse.ArgumentParser(description="SafeInCloud Linux: passwords and Google Drive (experimental)")
     parser.add_argument("database", nargs="?", help="Local COPY of an encrypted SafeInCloud .db file")
     parser.add_argument("--gui", action="store_true", help="Open a local desktop viewer")
     parser.add_argument("--show", metavar="ID", help="Explicitly reveal fields of one card")
