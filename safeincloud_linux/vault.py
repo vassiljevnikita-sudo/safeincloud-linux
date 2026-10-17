@@ -51,6 +51,11 @@ class Vault:
         path = Path(path)
         with path.open('rb') as handle:
             data = handle.read(MAX_FILE + 1)
+        return cls.from_encrypted(path, data, password)
+
+    @classmethod
+    def from_encrypted(cls, path, data, password):
+        path = Path(path)
         xml = decrypt(data, password)
         # Retain comments, processing instructions, unknown elements and attributes.
         parser = SafeET.DefusedXMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True), forbid_dtd=True)
@@ -200,7 +205,9 @@ class Vault:
 
     def close(self):
         if self.root is not None:
-            self.root.clear()
+            # Clear descendants too: an open dialog can hold a card alias.
+            for element in list(self.root.iter()):
+                element.clear()
         self.root = None
         self.password = None
         self.dirty = False

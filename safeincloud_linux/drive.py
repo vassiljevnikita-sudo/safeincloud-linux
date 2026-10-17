@@ -313,6 +313,14 @@ class DriveSession:
         local = self.path.read_bytes()
         latest = self.drive._request(self.candidate["id"])
         if latest.get("etag") != self.etag:
+            if latest.get("etag") and latest.get("md5Checksum") == hashlib.md5(local).hexdigest():
+                # Lock can terminate the session after a successful transfer
+                # but before its baseline is committed. Identical ciphertext
+                # needs no overwrite or merge; adopt the confirmed revision.
+                self.etag = latest['etag']
+                self.base_digest = hashlib.sha256(local).digest()
+                self.persist()
+                return "Drive-Version bestätigt. Verschlüsselte Kopien stimmen überein."
             if hashlib.sha256(local).digest() == self.base_digest:
                 # No local edits: safely pull the newer remote version, preserving backup.
                 from . import decrypt

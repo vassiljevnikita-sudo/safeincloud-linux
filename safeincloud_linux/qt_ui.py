@@ -1,6 +1,6 @@
 """Minimal native Qt desktop for the interoperable password vault."""
 import queue
-import hmac
+import base64
 import threading
 from pathlib import Path
 
@@ -145,10 +145,12 @@ class Editor(QDialog):
 
 
 class Window(QMainWindow):
-    def __init__(self, path, on_sync=None, settings=True):
+    def __init__(self, path, on_sync=None, settings=True, *, boundary=None, recovery=None):
         super().__init__()
         self.path, self.on_sync = Path(path), on_sync
         self.vault = None
+        self.boundary = boundary
+        self.recovery = recovery
         self.locked = True
         self.lock_generation = 0
         self.busy = False
@@ -172,6 +174,10 @@ class Window(QMainWindow):
         self.idle.setSingleShot(True)
         self.idle.setInterval(300000)
         self.idle.timeout.connect(self.auto_lock)
+        self.clipboard_timer = QTimer(self)
+        self.clipboard_timer.setSingleShot(True)
+        self.clipboard_timer.setInterval(30000)
+        self.clipboard_timer.timeout.connect(self.expire_clipboard)
         self.poller = QTimer(self)
         self.poller.timeout.connect(self.poll)
         self.poller.start(75)
@@ -348,17 +354,18 @@ class Window(QMainWindow):
         if self.busy:
             return False
         self.password.clear()
-        retained = self.vault is not None
-        if self.vault:
-            if not hmac.compare_digest(password.encode(), self.vault.password.encode()):
-                self.unlock_error.setText('Das Masterpasswort ist falsch.')
-                return False
-        else:
-            try:
+        retained = self.recovery is not None
+        try:
+            if retained:
+                self.vault = Vault.from_encrypted(self.path, base64.b64decode(self.recovery['data'], validate=True), password)
+                self.vault.snapshot = self.recovery['snapshot']
+                self.vault.dirty = True
+                self.recovery = None
+            else:
                 self.vault = Vault.open(self.path, password)
-            except Exception:
-                self.unlock_error.setText('Das Passwort ist falsch oder die Datei wird noch nicht unterstützt.')
-                return False
+        except Exception:
+            self.unlock_error.setText('Das Passwort ist falsch oder die Datei wird noch nicht unterstützt.')
+            return False
         self.locked = False
         self.unlock_error.clear()
         self.stack.setCurrentIndex(1)
@@ -583,7 +590,7 @@ class Window(QMainWindow):
             return
         QApplication.clipboard().setText(value)
         self.clipboard_value = value
-        QTimer.singleShot(30000, lambda v=value: self.clear_clipboard(v))
+        self.clipboard_timer.start()
         self.status.setText('Kopiert · Zwischenablage wird nach 30 Sekunden geleert')
 
     def clear_clipboard(self, value):
@@ -592,6 +599,11 @@ class Window(QMainWindow):
             clipboard.clear()
         if self.clipboard_value == value:
             self.clipboard_value = None
+            self.clipboard_timer.stop()
+
+    def expire_clipboard(self):
+        if self.clipboard_value is not None:
+            self.clear_clipboard(self.clipboard_value)
 
     def edit_entry(self, new=False):
         if not self.is_unlocked() or self.busy:
@@ -649,6 +661,14 @@ class Window(QMainWindow):
     def sync(self):
         if self.busy or not self.is_unlocked() or not self.on_sync:
             return
+        # Never let the background worker save dirty XML concurrently with a
+        # lock snapshot. Failed writes stay in the foreground until locking.
+        if self.vault.dirty:
+            try:
+                self.vault.save()
+            except Exception:
+                self.status.setText('Speichern fehlgeschlagen. Drive-Abgleich wurde nicht gestartet.')
+                return
         self.busy = True
         self.sync_button.setEnabled(False)
         self.add_button.setEnabled(False)
@@ -687,9 +707,10 @@ class Window(QMainWindow):
     def auto_lock(self):
         self.lock()
 
-    def lock(self):
-        # Revoke access before any fallible I/O. A retained Vault is recovery
-        # state, never permission to expose credentials or accept shortcuts.
+    def lock(self, *, closing=False):
+        had_session = self.vault is not None
+        # Conceal first. The production session boundary then terminates the
+        # entire heap, including every background job and suspended callback.
         self.locked = True
         self.lock_generation += 1
         self.idle.stop()
@@ -709,27 +730,46 @@ class Window(QMainWindow):
         if self.clipboard_value is not None:
             self.clear_clipboard(self.clipboard_value)
         self.update_controls()
-        if self.busy:
-            self.pending_lock = True
-            self.unlock_error.setText('Der Drive-Abgleich wird abgeschlossen. Dein Tresor wird gesperrt.')
-            return False
+        notice = ('Gesperrt. Änderungen sind nur verschlüsselt im Arbeitsspeicher erhalten. '
+                  'Zum Wiederherstellen erneut entsperren; die App geöffnet lassen.' if self.recovery else '')
         if self.vault and self.vault.dirty:
             try:
-                self.vault.save()
+                # A failed disk write must retain ciphertext only, never a
+                # password/key that can decrypt the recovery automatically.
+                self.recovery = dict(data=base64.b64encode(self.vault.serialize_encrypted()).decode('ascii'),
+                                     snapshot=self.vault.snapshot)
             except Exception:
-                self.unlock_error.setText('Gesperrt. Änderungen konnten nicht gespeichert werden. '
-                                          'Zum Wiederherstellen bitte erneut entsperren.')
-                return False
+                notice = 'Gesperrt. Änderungen konnten nicht verschlüsselt werden und wurden verworfen.'
+            else:
+                if self.recovery:
+                    notice = 'Gesperrt. Änderungen sind nur verschlüsselt im Arbeitsspeicher erhalten. Zum Wiederherstellen erneut entsperren; die App geöffnet lassen.'
+        # Capture no live transport, Vault, callbacks or exception objects.
+        if self.boundary is not None and had_session:
+            from .session_process import source_state
+            try:
+                source = source_state(self.on_sync)
+            except Exception:
+                source = None
+                notice += ' Drive-Verbindung bitte nach dem Neustart erneut einrichten.'
+            state = dict(path=str(self.path), source=source,
+                         recovery=self.recovery, notice=notice)
+            if self.settings:
+                state['geometry'] = base64.b64encode(bytes(self.saveGeometry())).decode('ascii')
+            if closing and self.recovery is None and not notice:
+                self.boundary.close(state)
+            else:
+                self.boundary.restart(state)
         if self.vault:
             self.vault.close()
         self.vault = None
-        self.unlock_error.clear()
+        self.pending_lock = False
+        self.unlock_error.setText(notice)
         self.stack.setCurrentIndex(0)
         self.password.setFocus()
-        return True
+        return self.recovery is None
 
     def closeEvent(self, event):
-        if not self.lock():
+        if not self.lock(closing=True):
             if self.busy:
                 self.pending_close = True
             event.ignore()
@@ -740,9 +780,16 @@ class Window(QMainWindow):
         event.accept()
 
 
-def run(path, on_sync=None):
+def run(path, on_sync=None, *, boundary=None, recovery=None, notice=''):
+    if boundary is None:
+        # Public desktop entry points must never bypass process replacement.
+        from .session_process import launch_isolated
+        if on_sync is not None or recovery is not None:
+            raise ValueError('Desktop sessions require a process boundary')
+        return launch_isolated(path)
     app = QApplication.instance() or QApplication([])
     app.setQuitOnLastWindowClosed(True)
-    window = Window(path, on_sync)
+    window = Window(path, on_sync, boundary=boundary, recovery=recovery)
+    window.unlock_error.setText(notice)
     window.show()
     return app.exec()

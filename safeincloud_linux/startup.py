@@ -142,6 +142,11 @@ def choose_source(directory, on_source=None):
 
 
 def launch(path=None):
+    from .session_process import launch_isolated
+    return launch_isolated(path)
+
+
+def _launch(path=None, *, boundary, state):
     app = QApplication.instance() or QApplication([])
     load_fonts()
     app.setApplicationName('SafeInCloud Linux')
@@ -149,16 +154,18 @@ def launch(path=None):
     app.setWindowIcon(QIcon(str(Path(__file__).parent / 'assets/icon.svg')))
     app.setOrganizationName('SafeInCloud Linux')
     if path:
-        return run(path)
+        from .session_process import restore_source
+        return run(path, on_sync=restore_source(state.get('source'), path),
+                   boundary=boundary, recovery=state.get('recovery'), notice=state.get('notice', ''))
     directory = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'safeincloud-linux/vaults'
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     directory.chmod(0o700)
     drive = OfficialDrive()
     cached = drive.cached_session(directory) if drive.configured() else None
     if cached is not None:
-        return run(cached.path, on_sync=cached)
+        return run(cached.path, on_sync=cached, boundary=boundary)
     sessions = []
     selected = choose_source(directory, sessions.append)
     if selected:
-        return run(selected, on_sync=sessions[0] if sessions else None)
+        return run(selected, on_sync=sessions[0] if sessions else None, boundary=boundary)
     return 0

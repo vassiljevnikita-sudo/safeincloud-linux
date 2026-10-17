@@ -1,3 +1,14 @@
+# 0.5.2
+
+- Replace the secret-bearing desktop process on lock, including failed saves,
+  open dialogs and unfinished Drive work. Wait for its exit before opening a
+  fresh locked window; pass only encrypted recovery and source metadata.
+- Recover unsaved changes using a newly entered master password, without
+  retaining a live Vault or password. If recovery encryption itself fails,
+  release the session and warn that pending changes were discarded.
+- Disable Linux core dumps and ordinary same-user process-memory inspection.
+- Remove credential-capturing clipboard timers and clear aliased XML elements.
+
 # 0.5.1
 
 - Revoke credential access immediately when locking, including failed local

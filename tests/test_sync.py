@@ -57,6 +57,20 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.drive._request.call_count, 1)
         self.assertEqual(self.session.etag, '"base"')
 
+    def test_interrupted_completed_upload_reconciles_without_overwrite(self):
+        self.edit()
+        self.vault.save()
+        self.drive._request.return_value = dict(etag='"completed-before-lock"',
+                                               md5Checksum=hashlib.md5(self.path.read_bytes()).hexdigest())
+        # Still has the old baseline, as if lock killed the post-upload callback.
+        self.session(self.vault)
+        self.assertEqual(self.drive._request.call_count, 1)
+        self.assertEqual(self.session.etag, '"completed-before-lock"')
+        self.assertEqual(self.session.base_digest, hashlib.sha256(self.path.read_bytes()).digest())
+        state = json.loads(self.path.with_suffix('.sync.json').read_text())
+        self.assertEqual(state['etag'], self.session.etag)
+        self.assertEqual(Vault.open(self.path, 'test').cards()[0].get('title'), 'Changed')
+
     def test_permission_and_missing_etag_never_upload(self):
         self.edit()
         self.drive.writable.return_value = False

@@ -33,10 +33,14 @@ No separate theme setting or periodic polling is required.
 - Drive check on unlock and after accepted edits; manual check when needed.
 - Conditional cloud updates: concurrent changes are refused rather than silently
   overwritten. A newer remote version is pulled when there are no local changes.
-- Automatic lock after five minutes. Lock conceals the UI immediately even if a
-  cloud request is still finishing or a local save fails. Pending edits remain
-  recoverable only after entering the master password again; stale dialogs and
-  shortcuts cannot reopen a locked vault.
+- Automatic lock after five minutes. Lock replaces the entire GUI process,
+  terminating its password-bearing heap, timers, dialogs and Drive threads.
+  A small supervisor receives only encrypted recovery and source metadata,
+  waits for the old process to exit, then starts a fresh locked window.
+  After a failed disk write, pending edits require the master password again
+  and remain only as ciphertext in memory: keep the app open until saved.
+  If even recovery encryption fails, locking takes priority and pending edits
+  are discarded with an explicit warning.
 
 This is an experimental interoperability implementation. It is deliberately
 smaller than the Windows app: browser autofill, passkeys, TOTP generation,
@@ -113,11 +117,17 @@ file ID are in the same private configuration directory. Never share token files
 
 Encrypted working copies and backups: `$XDG_DATA_HOME/safeincloud-linux/vaults/`
 (default `~/.local/share/...`). The laptop's data directory points into `/data-ssd`.
-Pending local edits survive restarts and failed uploads. Concurrent changes require
+Successfully saved local edits survive restarts and failed uploads. Concurrent changes require
 manual resolution; this version does not merge two edited vaults automatically.
 
 Keep your existing independent backups. The legacy CBC file format is not
-cryptographically authenticated. Python cannot guarantee secure memory erasure.
+cryptographically authenticated. Python cannot guarantee secure memory erasure;
+the desktop therefore terminates the secret-bearing process on lock rather than
+relying on deleting Python/Qt objects. Linux core dumps and ordinary same-user
+process-memory access are disabled before the session opens. This does not
+protect against root, a compromised client, prior captures, swap or clipboard
+history maintained by another application. A Drive request interrupted by lock
+can require a fresh check or conflict resolution; it never silently merges data.
 No plaintext vault is written to disk by the application. Current official-client
 roundtrips of every possible XML feature are not established; details are in
 [writing notes](docs/WRITING.md) and [format notes](docs/FORMAT.md).

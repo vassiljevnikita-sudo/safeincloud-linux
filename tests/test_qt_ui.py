@@ -76,8 +76,8 @@ class QtDesktopTests(unittest.TestCase):
         self.window.on_sync = lambda vault: calls.append(len(vault.cards())) or 'Abgeglichen'
         self.window.sync()
         self.assertTrue(self.window.busy)
-        self.assertFalse(self.window.lock())
-        self.assertTrue(self.window.pending_lock)
+        self.assertTrue(self.window.lock())
+        self.assertFalse(self.window.pending_lock)
         self.assertEqual(self.window.stack.currentIndex(), 0)
         self.assertFalse(self.window.unlock('test'))
         deadline = time.monotonic() + 3
@@ -106,7 +106,8 @@ class QtDesktopTests(unittest.TestCase):
             self.assertFalse(self.window.apply_entry('1', 'Pending', []))
             self.assertTrue(self.window.vault.dirty)
             self.assertFalse(self.window.lock())
-            self.assertIsNotNone(self.window.vault)
+            self.assertIsNone(self.window.vault)
+            self.assertIsNotNone(self.window.recovery)
 
     def test_secret_visibility_toggles(self):
         from PySide6.QtWidgets import QLabel, QPushButton

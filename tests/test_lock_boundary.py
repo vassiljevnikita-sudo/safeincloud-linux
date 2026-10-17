@@ -112,9 +112,11 @@ class LockBoundaryTests(unittest.TestCase):
             self.assertEqual(editor.inputs[0][1].text(), '')
             self.assertEqual(editor.inputs[0][0]['value'], '')
             self.assert_access_blocked()
-            self.assertIs(self.window.vault, vault)
-            self.assertTrue(vault.dirty)
-            self.assertEqual(vault.cards()[0].get('title'), 'Pending')
+            self.assertIsNone(self.window.vault)
+            self.assertIsNone(vault.password)
+            self.assertIsNone(vault.root)
+            self.assertNotIn('unsaved-demo', str(self.window.recovery))
+            self.assertNotIn('test-only', str(self.window.recovery))
             self.assertFalse(self.window.unlock('wrong'))
             self.assert_access_blocked()
             self.assertTrue(self.window.unlock('test-only'))
@@ -140,7 +142,9 @@ class LockBoundaryTests(unittest.TestCase):
                     getattr(self.window, trigger)()
                     self.assert_access_blocked()
                     self.assertTrue(self.window.isVisible())
-                    self.assertTrue(self.window.vault.dirty)
+                    self.assertIsNone(self.window.vault)
+                    self.assertIsNotNone(self.window.recovery)
+                self.assertTrue(self.window.unlock('test-only'))
 
     def test_pending_sync_lock_failure_cannot_reopen_editor(self):
         self.pending_edits()
@@ -153,7 +157,10 @@ class LockBoundaryTests(unittest.TestCase):
             self.assertFalse(self.window.busy)
             self.assertFalse(self.window.pending_lock)
             self.assert_access_blocked()
-            self.assertTrue(self.window.vault.dirty)
+            self.assertIsNone(self.window.vault)
+            self.assertIsNotNone(self.window.recovery)
+        self.assertTrue(self.window.unlock('test-only'))
+        self.assertEqual(self.window.current_card().get('title'), 'Pending')
 
     def test_stale_credential_callbacks_do_not_disclose_after_lock(self):
         self.assertTrue(self.window.unlock('test-only'))
@@ -176,7 +183,8 @@ class LockBoundaryTests(unittest.TestCase):
             return QDialog.Accepted
         with patch.object(vault, 'save', side_effect=OSError('synthetic failure')), patch.object(Editor, 'exec', finish):
             self.window.edit_entry()
-        self.assertEqual(vault.cards()[0].get('title'), 'Pending')
+        self.assertIsNone(vault.password)
+        self.assertEqual(self.window.current_card().get('title'), 'Pending')
 
     def test_delete_confirmation_cannot_cross_lock_and_reauthentication(self):
         self.pending_edits()
@@ -187,4 +195,17 @@ class LockBoundaryTests(unittest.TestCase):
             return QMessageBox.Yes
         with patch.object(vault, 'save', side_effect=OSError('synthetic failure')), patch.object(QMessageBox, 'question', side_effect=confirm):
             self.window.delete_entry()
-        self.assertEqual(len(vault.cards()), 1)
+        self.assertIsNone(vault.password)
+        self.assertEqual(len(self.window.vault.cards()), 1)
+
+    def test_lock_clears_aliased_elements_and_clipboard_timer(self):
+        self.window.unlock('test-only')
+        card = self.window.current_card()
+        field = card.find('field')
+        self.window.copy_value('synthetic-only')
+        self.assertTrue(self.window.clipboard_timer.isActive())
+        self.window.lock()
+        self.assertIsNone(field.text)
+        self.assertEqual(card.attrib, {})
+        self.assertFalse(self.window.clipboard_timer.isActive())
+        self.assertIsNone(self.window.clipboard_value)
