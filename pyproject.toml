@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "safeincloud-linux"
+version = "0.1.0"
+description = "Experimental read-only SafeInCloud database viewer for Linux"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["cryptography>=43", "defusedxml>=0.7.1"]
+
+[project.scripts]
+safeincloud-linux = "safeincloud_linux.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["safeincloud_linux*"]
