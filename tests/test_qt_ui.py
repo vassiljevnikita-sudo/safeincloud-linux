@@ -168,8 +168,12 @@ class QtDesktopTests(unittest.TestCase):
         from safeincloud_linux.qt_ui import CopyValueLabel
         from safeincloud_linux.qt_system_theme import system_theme
         theme = system_theme()
-        original_dark = theme.dark
-        self.addCleanup(lambda: theme.set_dark(original_dark))
+        original_dark, original_portal, original_qt = theme.dark, theme._portal_scheme, theme._qt_scheme
+        def restore():
+            theme._portal_scheme, theme._qt_scheme = original_portal, original_qt
+            theme.set_dark(original_dark)
+        self.addCleanup(restore)
+        theme._portal_scheme = 0
         self.window.unlock('test')
         encrypted_before = self.path.read_bytes()
         editor = Editor(self.window, self.window.current_card())
@@ -208,4 +212,25 @@ class QtDesktopTests(unittest.TestCase):
         theme.portal_setting_changed('unrelated.setting', 'color-scheme', QDBusVariant(2))
         self.assertTrue(theme.dark)
         theme.portal_setting_changed('org.freedesktop.appearance', 'color-scheme', QDBusVariant(2))
+        self.assertFalse(theme.dark)
+
+    def test_explicit_portal_preference_survives_conflicting_qt_events(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtDBus import QDBusVariant
+        from safeincloud_linux.qt_system_theme import system_theme
+        theme = system_theme()
+        original = theme.dark, theme._portal_scheme, theme._qt_scheme
+        def restore():
+            dark, theme._portal_scheme, theme._qt_scheme = original
+            theme.set_dark(dark)
+        self.addCleanup(restore)
+        theme.portal_setting_changed('org.freedesktop.appearance', 'color-scheme', QDBusVariant(1))
+        theme.qt_scheme_changed(Qt.ColorScheme.Light)
+        self.assertTrue(theme.dark)
+        theme.portal_setting_changed('org.freedesktop.appearance', 'color-scheme', QDBusVariant(2))
+        theme.qt_scheme_changed(Qt.ColorScheme.Dark)
+        self.assertFalse(theme.dark)
+        theme.portal_setting_changed('org.freedesktop.appearance', 'color-scheme', QDBusVariant(0))
+        self.assertTrue(theme.dark)
+        theme.qt_scheme_changed(Qt.ColorScheme.Light)
         self.assertFalse(theme.dark)

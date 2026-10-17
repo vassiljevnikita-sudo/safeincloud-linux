@@ -1,3 +1,12 @@
+# 0.5.1
+
+- Revoke credential access immediately when locking, including failed local
+  saves and unfinished Drive synchronization. Preserve pending edits behind
+  master-password reauthentication and block stale dialogs and shortcuts.
+- Clear credential views, open editors and the tracked clipboard when locking.
+- Keep an explicit desktop portal appearance preference authoritative over
+  conflicting Qt notifications; restore Qt fallback when the preference clears.
+
 # 0.5.0
 
 - Follow the system's light/dark appearance automatically, including changes

@@ -106,15 +106,15 @@ class SystemTheme(QObject):
         if self._portal_scheme in (1, 2):
             self.set_dark(self._portal_scheme == 1)
         else:
-            self.qt_scheme_changed(self.app.styleHints().colorScheme())
+            self.qt_scheme_changed(self._qt_scheme)
 
     @Slot(Qt.ColorScheme)
     def qt_scheme_changed(self, scheme):
         self._qt_scheme = scheme
-        if scheme != Qt.ColorScheme.Unknown:
-            self.set_dark(scheme == Qt.ColorScheme.Dark)
-        elif self._portal_scheme in (1, 2):
+        if self._portal_scheme in (1, 2):
             self.set_dark(self._portal_scheme == 1)
+        elif scheme != Qt.ColorScheme.Unknown:
+            self.set_dark(scheme == Qt.ColorScheme.Dark)
         else:
             self.set_dark(self._fallback_dark)
 

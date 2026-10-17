@@ -34,7 +34,9 @@ No separate theme setting or periodic polling is required.
 - Conditional cloud updates: concurrent changes are refused rather than silently
   overwritten. A newer remote version is pulled when there are no local changes.
 - Automatic lock after five minutes. Lock conceals the UI immediately even if a
-  cloud request is still finishing.
+  cloud request is still finishing or a local save fails. Pending edits remain
+  recoverable only after entering the master password again; stale dialogs and
+  shortcuts cannot reopen a locked vault.
 
 This is an experimental interoperability implementation. It is deliberately
 smaller than the Windows app: browser autofill, passkeys, TOTP generation,

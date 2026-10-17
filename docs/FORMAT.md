@@ -46,4 +46,5 @@ against a Unicode vault created by a running official client.
 The GUI/CLI displays direct `<card>` children excluding `template="true"` and
 `deleted="true"`. It displays title, ID, direct `<field>` names/types/text, and
 `<notes>`. Attachments, record merging, ghosts, and newer features are not
-implemented. Unknown elements are not written back because there is no writer.
+implemented. The editor preserves unknown elements and attributes when saving;
+their semantics and complete official-client roundtrips are not established.

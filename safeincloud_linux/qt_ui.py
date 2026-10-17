@@ -136,12 +136,21 @@ class Editor(QDialog):
     def values(self):
         return (self.title_input.text().strip(), [{**spec, 'value': field.toPlainText() if isinstance(field, QTextEdit) else field.text()} for spec, field in self.inputs], self.notes.toPlainText())
 
+    def clear_sensitive(self):
+        self.title_input.clear()
+        self.notes.clear()
+        for spec, field in self.inputs:
+            spec['value'] = ''
+            field.clear()
+
 
 class Window(QMainWindow):
     def __init__(self, path, on_sync=None, settings=True):
         super().__init__()
         self.path, self.on_sync = Path(path), on_sync
         self.vault = None
+        self.locked = True
+        self.lock_generation = 0
         self.busy = False
         self.pending_lock = False
         self.pending_close = False
@@ -323,39 +332,50 @@ class Window(QMainWindow):
             shortcut.activated.connect(callback)
 
     def eventFilter(self, obj, event):
-        if self.vault and event.type() in (QEvent.KeyPress, QEvent.MouseButtonPress, QEvent.Wheel):
+        if self.is_unlocked() and event.type() in (QEvent.KeyPress, QEvent.MouseButtonPress, QEvent.Wheel):
             self.idle.start()
         return super().eventFilter(obj, event)
+
+    def is_unlocked(self):
+        return self.vault is not None and not self.locked
+
+    def update_controls(self):
+        enabled = self.is_unlocked() and not self.busy
+        for widget in (self.sync_button, self.add_button, self.navigation, self.search, self.entries):
+            widget.setEnabled(enabled)
 
     def unlock(self, password):
         if self.busy:
             return False
         self.password.clear()
+        retained = self.vault is not None
         if self.vault:
-            if hmac.compare_digest(password.encode(), self.vault.password.encode()):
-                self.stack.setCurrentIndex(1)
-                self.idle.start()
-                self.unlock_error.clear()
-                return True
-            self.unlock_error.setText('Das Masterpasswort ist falsch.')
-            return False
-        try:
-            self.vault = Vault.open(self.path, password)
-        except Exception:
-            self.unlock_error.setText('Das Passwort ist falsch oder die Datei wird noch nicht unterstützt.')
-            return False
+            if not hmac.compare_digest(password.encode(), self.vault.password.encode()):
+                self.unlock_error.setText('Das Masterpasswort ist falsch.')
+                return False
+        else:
+            try:
+                self.vault = Vault.open(self.path, password)
+            except Exception:
+                self.unlock_error.setText('Das Passwort ist falsch oder die Datei wird noch nicht unterstützt.')
+                return False
+        self.locked = False
         self.unlock_error.clear()
         self.stack.setCurrentIndex(1)
         self.idle.start()
+        self.update_controls()
         self.refresh_navigation()
         self.refresh_entries()
         self.cloud.setText('●  Google Drive\nVerbunden · verschlüsselte Datei' if self.on_sync else '●  Lokale Datenbank\nAuf diesem Gerät gespeichert')
-        self.status.setText('Entsperrt · Änderungen werden automatisch lokal gespeichert')
-        if getattr(self.on_sync, 'auto_sync_on_unlock', False) is True:
+        self.status.setText('Entsperrt · Ungespeicherte Änderungen wiederhergestellt' if self.vault.dirty
+                            else 'Entsperrt · Änderungen werden automatisch lokal gespeichert')
+        if not retained and getattr(self.on_sync, 'auto_sync_on_unlock', False) is True:
             QTimer.singleShot(0, self.sync)
         return True
 
     def refresh_navigation(self):
+        if not self.is_unlocked():
+            return
         previous = self.navigation.currentRow()
         self.navigation.blockSignals(True)
         self.navigation.clear()
@@ -375,7 +395,7 @@ class Window(QMainWindow):
         self.navigation.blockSignals(False)
 
     def refresh_entries(self, *_):
-        if not self.vault:
+        if not self.is_unlocked():
             return
         selected = self.selected_id
         query = self.search.text().casefold()
@@ -411,7 +431,7 @@ class Window(QMainWindow):
         self.show_entry(self.entries.currentItem())
 
     def current_card(self):
-        return next((c for c in self.vault.cards() if c.get('id') == self.selected_id), None) if self.vault else None
+        return next((c for c in self.vault.cards() if c.get('id') == self.selected_id), None) if self.is_unlocked() else None
 
     def clear_detail(self):
         while self.detail_layout.count():
@@ -550,6 +570,8 @@ class Window(QMainWindow):
         self.persist()
 
     def toggle_secret(self, widget, value, control):
+        if not self.is_unlocked():
+            return
         reveal = control.text() == 'Anzeigen'
         widget.setText(value if reveal else '••••••••••••')
         control.setText('Verbergen' if reveal else 'Anzeigen')
@@ -557,6 +579,8 @@ class Window(QMainWindow):
         control.setAccessibleName('Passwort verbergen' if reveal else 'Passwort anzeigen')
 
     def copy_value(self, value):
+        if not self.is_unlocked():
+            return
         QApplication.clipboard().setText(value)
         self.clipboard_value = value
         QTimer.singleShot(30000, lambda v=value: self.clear_clipboard(v))
@@ -570,21 +594,24 @@ class Window(QMainWindow):
             self.clipboard_value = None
 
     def edit_entry(self, new=False):
-        if not self.vault or self.busy:
+        if not self.is_unlocked() or self.busy:
             return
         card = None if new else self.current_card()
         if card is None and not new:
             return
         dialog = Editor(self, card)
         self.editors.append(dialog)
-        if dialog.exec() == QDialog.Accepted and self.vault:
+        origin, generation = self.vault, self.lock_generation
+        if (dialog.exec() == QDialog.Accepted and self.is_unlocked() and not self.busy
+                and self.vault is origin and self.lock_generation == generation):
             title, fields, notes = dialog.values()
             self.apply_entry(None if card is None else card.get('id'), title, fields, notes)
         self.editors.remove(dialog)
+        dialog.clear_sensitive()
         dialog.deleteLater()
 
     def apply_entry(self, ident, title, fields, notes=''):
-        if not self.vault or self.busy:
+        if not self.is_unlocked() or self.busy:
             return False
         try:
             self.selected_id = self.vault.upsert(ident, title, fields, notes)
@@ -594,6 +621,8 @@ class Window(QMainWindow):
             return False
 
     def persist(self):
+        if not self.is_unlocked() or self.busy:
+            return False
         try:
             self.vault.save()
         except Exception as exc:
@@ -608,14 +637,17 @@ class Window(QMainWindow):
         return True
 
     def delete_entry(self):
-        if not self.vault or self.busy or self.current_card() is None:
+        if not self.is_unlocked() or self.busy or self.current_card() is None:
             return
-        if QMessageBox.question(self, 'Eintrag löschen', 'Diesen Eintrag in den Papierkorb verschieben?', QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            self.vault.delete(self.selected_id)
+        origin, generation, ident = self.vault, self.lock_generation, self.selected_id
+        answer = QMessageBox.question(self, 'Eintrag löschen', 'Diesen Eintrag in den Papierkorb verschieben?', QMessageBox.Yes | QMessageBox.No)
+        if (answer == QMessageBox.Yes and self.is_unlocked() and not self.busy
+                and self.vault is origin and self.lock_generation == generation):
+            self.vault.delete(ident)
             self.persist()
 
     def sync(self):
-        if self.busy or not self.vault or not self.on_sync:
+        if self.busy or not self.is_unlocked() or not self.on_sync:
             return
         self.busy = True
         self.sync_button.setEnabled(False)
@@ -646,12 +678,8 @@ class Window(QMainWindow):
                 self.pending_close = False
                 self.close()
             return
-        self.sync_button.setEnabled(True)
-        self.add_button.setEnabled(True)
-        self.navigation.setEnabled(True)
-        self.search.setEnabled(True)
-        self.entries.setEnabled(True)
-        if self.vault:
+        self.update_controls()
+        if self.is_unlocked():
             self.refresh_navigation()
             self.refresh_entries()
         self.status.setText(text if success else 'Lokal gespeichert · Drive-Abgleich ausstehend: ' + text)
@@ -660,40 +688,41 @@ class Window(QMainWindow):
         self.lock()
 
     def lock(self):
+        # Revoke access before any fallible I/O. A retained Vault is recovery
+        # state, never permission to expose credentials or accept shortcuts.
+        self.locked = True
+        self.lock_generation += 1
+        self.idle.stop()
+        self.stack.setCurrentIndex(0)
+        self.password.clear()
+        for dialog in tuple(self.editors):
+            dialog.clear_sensitive()
+            dialog.reject()
+        self.selected_id = None
+        self.entries.clear()
+        self.navigation.clear()
+        self.search.clear()
+        self.empty_detail()
+        self.cloud.clear()
+        self.count.clear()
+        self.status.clear()
+        if self.clipboard_value is not None:
+            self.clear_clipboard(self.clipboard_value)
+        self.update_controls()
         if self.busy:
             self.pending_lock = True
-            self.idle.stop()
-            self.stack.setCurrentIndex(0)
-            self.password.clear()
             self.unlock_error.setText('Der Drive-Abgleich wird abgeschlossen. Dein Tresor wird gesperrt.')
-            if self.clipboard_value is not None:
-                self.clear_clipboard(self.clipboard_value)
             return False
         if self.vault and self.vault.dirty:
             try:
                 self.vault.save()
-            except Exception as exc:
-                self.status.setText('Sperren ausgesetzt: Änderungen konnten nicht gespeichert werden. ' + str(exc))
-                self.unlock_error.setText('Änderungen konnten nicht gespeichert werden. Zum Wiederherstellen bitte erneut entsperren.')
-                self.idle.start()
+            except Exception:
+                self.unlock_error.setText('Gesperrt. Änderungen konnten nicht gespeichert werden. '
+                                          'Zum Wiederherstellen bitte erneut entsperren.')
                 return False
-        for dialog in self.editors:
-            dialog.reject()
-        self.idle.stop()
         if self.vault:
             self.vault.close()
         self.vault = None
-        self.selected_id = None
-        self.entries.clear()
-        self.search.clear()
-        self.empty_detail()
-        if self.clipboard_value is not None:
-            self.clear_clipboard(self.clipboard_value)
-        self.sync_button.setEnabled(True)
-        self.add_button.setEnabled(True)
-        self.navigation.setEnabled(True)
-        self.search.setEnabled(True)
-        self.entries.setEnabled(True)
         self.unlock_error.clear()
         self.stack.setCurrentIndex(0)
         self.password.setFocus()
