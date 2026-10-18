@@ -1,0 +1,6 @@
+<database><label id="private" name="Privat"/><label id="work" name="Arbeit"/>
+<card id="github" title="GitHub" star="true"><field name="Login" type="login">nikita@example.test</field><field name="Passwort" type="password">R9!mF4@vK2#sX7$pL5%uH8</field><field name="Webseite" type="website">https://github.com</field><label_id>work</label_id><notes>Zugang für meine Projekte und Repositories.</notes></card>
+<card id="mail" title="E-Mail"><field name="Login" type="email">nikita@example.test</field><field name="Passwort" type="password">demo-only-password</field><field name="Webseite" type="website">https://example.test</field><label_id>private</label_id></card>
+<card id="paypal" title="PayPal" star="true"><field name="Login" type="email">nikita@example.test</field><field name="Passwort" type="password">Y7$vQ9!nL2#rT5@wJ8%kE4</field><field name="Webseite" type="website">https://www.paypal.com</field><label_id>private</label_id></card>
+<card id="wifi" title="WLAN zuhause"><field name="Netzwerk" type="login">Mein Netzwerk</field><field name="Passwort" type="password">synthetic-network-only</field><label_id>private</label_id></card>
+</database>

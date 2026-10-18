@@ -1,0 +1,1 @@
+<database vendor="interop"><label id="7" name="Privat"/><card id="42" title="Unicode-Test 🔒"><field name="Passwort" type="password">öffentliches-Testpasswort</field><opaque custom="keep">unbekannt</opaque><label_id>7</label_id></card></database>
