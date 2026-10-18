@@ -28,7 +28,7 @@ Comment=Nativer Passwortmanager mit Rust und GTK4
 Exec="$prefix/bin/safeincloud-linux" %f
 Icon=$prefix/share/icons/hicolor/scalable/apps/safeincloud-linux.svg
 Terminal=false
-Categories=Utility;System;Security;
+Categories=System;Security;
 StartupNotify=true
 StartupWMClass=io.github.vassiljevnikita.SafeInCloudLinux
 EOF
