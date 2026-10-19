@@ -32,7 +32,7 @@ The official .NET `DatabaseCipher.GetStrategy` selects `Version1Strategy` when t
 byte is 1, otherwise `Version2Strategy`. Their observed `GetPasswordBytes` methods:
 
 - Strategy 1: obtain UTF-16 code units, convert each to a byte (low 8 bits only).
-  Python equivalent: `password.encode('utf-16-le', errors='surrogatepass')[::2]`.
+  Rust equivalent: `password.encode_utf16().map(|unit| unit as u8).collect::<Vec<_>>()`.
 - Strategy 2: UTF-8 bytes.
 
 The inspected writer emits strategy 1. The upstream Go reader always uses UTF-8,
@@ -43,7 +43,7 @@ against a Unicode vault created by a running official client.
 
 ## XML subset displayed
 
-The GUI/CLI displays direct `<card>` children excluding `template="true"` and
+The GTK interface displays direct `<card>` children excluding `template="true"` and
 `deleted="true"`. It displays title, ID, direct `<field>` names/types/text, and
 `<notes>`. Attachments, record merging, ghosts, and newer features are not
 implemented. The editor preserves unknown elements and attributes when saving;

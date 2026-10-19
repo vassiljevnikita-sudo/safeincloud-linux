@@ -1,3 +1,36 @@
+# 1.0.0 — Rust + GTK4
+
+- Replace the Python/Qt implementation with a native Rust/GTK4 application.
+  Keep the existing encrypted-file format, local cache and private Drive identity.
+- Port original-client metadata extraction, PKCE login, token refresh and
+  ETag-conditional synchronization to Rust; no Python subprocess is required.
+- Preserve existing-entry editing, labels, favorites, encrypted backups,
+  website icons, four generator modes and local password strength assessment.
+- Replace the secret-bearing process on lock; encrypted unsaved recovery uses
+  an anonymous descriptor and requires the master password again.
+- Follow the desktop's appearance through the Settings portal, including live
+  changes. Embed the original local fonts without a network font service.
+- Restructure the German README around the Life OS design philosophy, retain
+  the product image and original-product link, and preserve upstream attribution.
+- Add independent Unicode interoperability fixtures, synthetic Drive tests,
+  native GTK workflow checks, a real exec boundary probe and Rust CI.
+
+# 0.6.0
+
+- Add a local password generator with four modes, a length slider, character
+  options and explicit application from the entry editor. Memorable passwords
+  use six random words by default from the bundled, attributed EFF Long Wordlist.
+- Show pattern-aware zxcvbn password strength and labeled crack-time estimates
+  in entry details, editor and generator. No password is sent to a service.
+- Fetch website icons asynchronously over HTTPS directly from the site, with
+  declared icon/CDN discovery, bounded requests and an in-memory session cache.
+  Website icons can be disabled, and pending requests are cancelled on lock.
+- Open existing entry editors with a double-click, retaining the Bearbeiten
+  button and Ctrl+E. Verify encrypted edit/reopen and generator lock boundaries.
+- Make Max Schmitt's upstream repository and the separate official Windows
+  interoperability reference explicit. Ship the complete upstream MIT license
+  and source notices in the package.
+
 # 0.5.2
 
 - Replace the secret-bearing desktop process on lock, including failed saves,

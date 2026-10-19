@@ -11,3 +11,5 @@ dist/
 *.dll
 *.gpr
 *.rep/
+/target/
+/.cargo-local/
