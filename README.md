@@ -1,55 +1,73 @@
 # SafeInCloud Linux
 
-## 1\. Was ist SafeInCloud Linux?
-
-**SafeInCloud Linux ist ein unabhängiger, nativer Linux-Client für [SafeInCloud](https://www.safe-in-cloud.com/).**
-
-Die App verbindet den verschlüsselten Tresor, die Suche, die Bearbeitung und die
-Synchronisation zu einem zusammenhängenden Arbeitsablauf. Passwörter sollen schnell
-auffindbar und einfach nutzbar sein, während der User die Kontrolle über seine
-Daten behält.
-
-Die Linux-Anwendung wird in **Rust mit GTK4** entwickelt. Sie ist ein eigenständiges
-Community-Projekt und steht in keiner Verbindung zu SafeInCloud SAS.
+Ein inoffizieller Linux-Client für den Passwortmanager [SafeInCloud](https://www.safe-in-cloud.com/),
+geschrieben in Rust mit GTK4. Er öffnet einen vorhandenen verschlüsselten
+SafeInCloud-Tresor, lokal oder aus Google Drive, durchsucht und bearbeitet die
+Einträge und erzeugt neue Passwörter. Das Projekt ist eigenständig und steht in
+keiner Verbindung zu SafeInCloud SAS.
 
 ![SafeInCloud Linux mit fiktiven Beispieldaten](docs/images/ui-preview.png)
 
-## 2\. Designphilosophie
+Das Bild zeigt die Demo mit fiktiven Beispieldaten.
 
-**Ein System, in dem alles zusammenpasst.**
+## Ausprobieren
 
-- **Deep Integration:** Tresor, Suche, Details, Editor und Synchronisation gehören zu einem gemeinsamen Ablauf. Die App soll sich wie ein einziges System anfühlen.
-- **Linux First:** Native GTK4-Widgets und die Konventionen des Linux-Desktops bilden die Grundlage der Oberfläche.
-- **Interaction First:** Jede Funktion wird als vollständiger, intuitiver Nutzerfluss gedacht. Sichtbare Aktionen müssen eine klare Wirkung und verständliche Rückmeldung haben.
-- **Blazing Fast:** Schnelle Reaktionen und effiziente Datenflüsse sind grundlegende Anforderungen. Konkrete Leistungsversprechen brauchen Messungen.
-- **Simple Code:** Klarer, wartbarer und typsicherer Rust-Code mit möglichst wenig unnötiger Komplexität.
-- **User Control:** Geheimnisse bleiben verborgen, bis der User sie benötigt. Änderungen, Synchronisation und Konflikte müssen nachvollziehbar sein; sensible oder irreversible Aktionen brauchen eine bewusste Entscheidung.
+Voraussetzungen: Rust ab 1.92 mit Cargo, GTK4 ab 4.8, Fontconfig und die
+üblichen C-Buildwerkzeuge.
 
-## 3\. Glossar
+```sh
+# Fedora
+sudo dnf install gcc pkgconf-pkg-config gtk4-devel fontconfig-devel
+# Ubuntu 24.04 / Debian mit GTK4 ab 4.8
+sudo apt install build-essential pkg-config libgtk-4-dev libfontconfig1-dev
+```
 
-- **Du:** Du bist der Agent, der an diesem Projekt arbeitet. Willkommen bei SafeInCloud Linux.
-- **Ich:** Ich bin Nikita, der Schaffer dieses Projekts.
-- **User:** Der Benutzer der App. Seine vorhandenen Daten und gewohnten Arbeitsabläufe bestimmen die Anforderungen.
-- **Subagenten:** Andere Agenten, die nach den geltenden Projektvorgaben bei abgegrenzten Aufgaben mitarbeiten können.
-- **System:** SafeInCloud Linux als Ganzes: Oberfläche, Tresor, lokale Speicherung und Synchronisation.
-- **Tresor:** Die verschlüsselte SafeInCloud-Datenbank mit Einträgen, Feldern und Labels.
-- **Bots:** Automatisierte Prüfungen und Reviews in GitHub Pull Requests.
+Bauen und die Demo starten:
 
-## 4\. Arbeitsprinzipien
+```sh
+git clone https://github.com/vassiljevnikita-sudo/safeincloud-linux.git
+cd safeincloud-linux
+cargo build --locked --release
+target/release/safeincloud-linux --demo
+```
 
-- Verstehe vor Änderungen das bestehende System und die Absicht hinter der Anforderung.
-- Denke in vollständigen Nutzerflüssen, nicht in isolierten Features.
-- Erweitere bestehende Strukturen, statt parallele Lösungen zu schaffen.
-- Bevorzuge einfache, robuste und performante Lösungen gegenüber unnötigen Abstraktionen.
-- Erhalte vorhandene Tresordaten und überprüfe Änderungen mit geeigneten Tests.
-- Mache Fehler, ausstehende Änderungen und Synchronisationskonflikte sichtbar.
-- Optimiere immer das Gesamtsystem, nicht nur einzelne Komponenten.
+`--demo` öffnet nur fiktive, temporäre Beispieldaten. Für die Website-Icons
+kontaktiert die Demo die öffentlichen Beispiel-Websites. Eine eigene Datei
+öffnet `target/release/safeincloud-linux --vault /pfad/zu/SafeInCloud.db`.
+`./scripts/install.sh` installiert Programm und Menüeintrag nach `~/.local`.
+Google Drive, Prüfungen und alle Abläufe stehen in [Entwicklung und Betrieb](docs/DEVELOPMENT.md).
 
-**Die zentrale Frage bei jeder Änderung lautet: Macht sie SafeInCloud Linux zu einem besseren, verlässlichen Passwortmanager für Linux?**
+## Status und Grenzen
 
-Installation, Start und Prüfungen stehen in [Entwicklung und Betrieb](docs/DEVELOPMENT.md).
-Die [Linux-Architektur](docs/LINUX_STACK.md) und die
-[Formatdokumentation](docs/FORMAT.md) beschreiben die technischen Grundlagen.
+Experimentell (Version 1.0.0). Bekannte Grenzen:
+
+- Die Rust-Portierung wurde nicht schreibend an der echten Drive-Datei getestet.
+- Ein vollständiger Roundtrip aller XML-Features mit der aktuellen
+  Windows-Anwendung ist nicht belegt ([WRITING.md](docs/WRITING.md), [FORMAT.md](docs/FORMAT.md)).
+  Unbekannte XML-Elemente und Anhänge bleiben erhalten, ihre Bedeutung ist
+  aber nicht umgesetzt.
+- Für die Google-Drive-Anmeldung braucht die App die offizielle, lokal
+  heruntergeladene `SafeInCloud.exe`. Sie liest daraus nur die Client-Konfiguration
+  und führt die Datei nicht aus ([GOOGLE_WINDOWS.md](docs/GOOGLE_WINDOWS.md)).
+- Die Oberfläche ist deutsch.
+- Kein externes Sicherheitsaudit.
+
+## Technik
+
+Rust (Edition 2021) mit gtk4-rs für die Oberfläche. Der Tresor bleibt im
+SafeInCloud-Format (AES-CBC, PBKDF2-SHA1, zlib); die App liest und schreibt es
+selbst. Google Drive läuft über OAuth mit PKCE und `reqwest` mit rustls, die
+Passwortbewertung lokal über zxcvbn. CI auf GitHub Actions prüft Formatierung,
+Clippy, Tests, einen GTK-Oberflächentest unter Xvfb und den Release-Build.
+Mehr in der [Linux-Architektur](docs/LINUX_STACK.md) und der [Formatdokumentation](docs/FORMAT.md).
+
+## Meine Rolle
+
+Nikita Vassiljev ([GitHub](https://github.com/vassiljevnikita-sudo)). Ich habe
+das Projekt angelegt und mit KI-Coding-Agenten gebaut. Ihre Arbeitsanweisungen
+stehen in [AGENTS.md](AGENTS.md).
+
+## Herkunft und Lizenz
 
 Die Formatimplementierung und die öffentliche Testdatei bauen auf
 [Max Schmitts golang-safe-in-cloud](https://github.com/mxschmitt/golang-safe-in-cloud)
@@ -58,3 +76,9 @@ Copyright © 2017 Max Schmitt, MIT). Der vollständige ursprüngliche Lizenztext
 in [THIRD_PARTY_LICENSE](THIRD_PARTY_LICENSE) erhalten. Die proprietäre
 Windows-Anwendung dient separat als Interoperabilitätsreferenz und wird nicht
 mitgeliefert. Weitere Quellen und Lizenzen: [Drittanbieterhinweise](THIRD_PARTY_NOTICES.md).
+
+Der eigene Code steht unter der MIT-Lizenz ([LICENSE](LICENSE)).
+
+## Für Coding-Agenten
+
+Glossar, Designphilosophie und Arbeitsprinzipien für die Agenten stehen in [AGENTS.md](AGENTS.md).
