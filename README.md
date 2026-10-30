@@ -65,7 +65,7 @@ Mehr in der [Linux-Architektur](docs/LINUX_STACK.md) und der [Formatdokumentatio
 
 Nikita Vassiljev ([GitHub](https://github.com/vassiljevnikita-sudo)). Ich habe
 das Projekt angelegt und mit KI-Coding-Agenten gebaut. Ihre Arbeitsanweisungen
-stehen in [AGENTS.md](AGENTS.md).
+stehen in [AGENTS.md](AGENTS.md). Das Projekt ist komplett in einer Nacht gevibecodet, weil mir mein Passwortmanager auf Linux gefehlt hat. Er funktioniert wie die Windows native Version und das ist alles was für mich gezählt hat.
 
 ## Herkunft und Lizenz
 
